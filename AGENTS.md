@@ -1,3 +1,35 @@
+使用中文回答和显示思考过程。给我的回复要清晰易懂
+
+<EXTREMELY_IMPORTANT>
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+</EXTREMELY_IMPORTANT>
+
+```dot
+digraph skill_flow {
+    "User message received" [shape=doublecircle];
+    "Might any skill apply?" [shape=diamond];
+    "Invoke Skill tool" [shape=box];
+    "Announce: 'Using [skill] to [purpose]'" [shape=box];
+    "Has checklist?" [shape=diamond];
+    "Create TodoWrite todo per item" [shape=box];
+    "Follow skill exactly" [shape=box];
+    "Respond (including clarifications)" [shape=doublecircle];
+
+    "User message received" -> "Might any skill apply?";
+    "Might any skill apply?" -> "Invoke Skill tool" [label="yes, even 1%"];
+    "Might any skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+    "Invoke Skill tool" -> "Announce: 'Using [skill] to [purpose]'";
+    "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+    "Has checklist?" -> "Create TodoWrite todo per item" [label="yes"];
+    "Has checklist?" -> "Follow skill exactly" [label="no"];
+    "Create TodoWrite todo per item" -> "Follow skill exactly";
+}
+```
+
 Software Engineering Protocol
 
 Decision Priority
@@ -30,14 +62,14 @@ Verification Guardrail
 - If tests are skipped, state verification steps + residual risk.
 - Untested code is “legacy”: add seams/isolate dependencies before behavior changes.
 
-uv Commands (Python)
-- Create/refresh venv: `uv venv .venv`
-- Install deps from pyproject: `uv pip install -e .`
-- Run commands in env: `uv run python -m pytest`, `uv run ruff check .`, `uv run mypy .`
-- Run scripts/tools: `uv run python path/to/script.py`
-
 Anti-Patterns
 - Premature optimization
 - Abstraction before 3rd use
 - Swallowing errors / silent failures
 - Hidden coupling / unclear ownership across modules
+
+uv Commands (Python)
+- Create/refresh venv: `uv venv .venv`
+- Install deps from pyproject: `uv pip install -e .`
+- Run commands in env: `uv run python -m pytest`, `uv run ruff check .`, `uv run mypy .`
+- Run scripts/tools: `uv run python path/to/script.py`

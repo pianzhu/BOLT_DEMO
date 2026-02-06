@@ -48,7 +48,7 @@
   - 数组元素对象字段只允许（按顺序输出）：`a,s,n,t,q,c`
   - `a`（动作，中文）：打开/关闭；设置用 `设置<属性>=<值>`；查询用 `查询<属性>`；静音/取消静音
   - `s`（房间）：未知 `"*"`；多房间用 `","`；排除房间用 `"!"` 前缀（例 `"*,!卧室"`）
-  - `n`（设备名）：去掉房间词，保留修饰词；不确定用 `"*"`；泛指类型（如“所有灯”“三个插座”）填该类型的中文原文（如“灯”“插座”“空调”“窗帘”），不要用 `"*"`
+  - `n`（设备名）：去掉房间词，保留修饰词；不确定用 `"*"`；泛指类型（如"所有灯""三个插座"）填该类型的中文原文（如"灯""插座""空调""窗帘"），不要用 `"*"`
   - `t`（类型）：仅限允许枚举；不确定用 `"Unknown"`
   - `q`：`one|all|any|except`；泛指类型默认 `all`；不确定用 `one`
   - `c`：仅明确数量时为整数；否则不输出该字段
@@ -58,6 +58,22 @@
   - `AirConditioner, Blind, Charger, Fan, Hub, Light, NetworkAudio, Unknown, Switch, Television, Washer, SmartPlug`
 - FR-4: 解析器必须做严格校验并在失败时返回：
   - `[{"a":"UNKNOWN","s":"*","n":"*","t":"Unknown","q":"one"}]`
+- FR-5: `a` 字段校验规则（前缀匹配策略）：
+  - 固定动作精确匹配：`打开`、`关闭`、`静音`、`取消静音`
+  - 前缀匹配：以 `设置` 或 `查询` 开头，且前缀后必须有内容（即 `设置` 单独出现不合法，`设置亮度=50` 合法）
+  - 不在上述范围内的动作值视为非法
+- FR-6: `s` 字段校验规则（V1 仅非空字符串）：
+  - V1 只校验为非空字符串，不做房间词表匹配或格式校验
+  - 后续版本可增加房间词表白名单或格式规则（如 `"*,!卧室"` 的结构校验）
+- FR-7: JSON 提取策略（两级回退）：
+  - 第一步：对 LLM 原始输出 `strip()` 后直接 `json.loads()`
+  - 第二步：若第一步失败，用正则 `\[.*\]`（DOTALL）提取第一个 `[...]` 片段后再 `json.loads()`
+  - 两步均失败则视为解析失败，返回标准 UNKNOWN 兜底
+- FR-8: 解析失败日志规范：
+  - 三个失败点统一使用 `logger.warning("command_parser.parse_failed", extra={...})`
+  - `failure_type` 取值：`"llm_error"`（LLM 调用异常）/ `"json_parse_error"`（JSON 提取失败）/ `"validation_failed"`（校验不通过）
+  - `input_text`：用户原始输入
+  - `raw_response`：LLM 原始输出（截断 500 字符，仅 `json_parse_error` 和 `validation_failed` 包含）
 
 ## 5. Non-Goals (Out of Scope)
 
@@ -84,7 +100,34 @@
 
 ## 9. Open Questions
 
-- `c` 的合法范围：是否允许 `0`？（V1 暂按“整数”校验，范围细化后续补充）
+- `c` 的合法范围：是否允许 `0`？（V1 暂按"整数"校验，范围细化后续补充）
+  - **已决定（V1）：** `c` 校验为 `int` 且非 `bool`，允许 `0` 和负数；范围约束后续版本补充
 - 房间词表是否需要严格匹配已知房间名？（V1 不做词表校验，仅校验格式）
-- “指代词”触发规则：是否需要更系统的中文规则/词典？（V1 由模型按 prompt 处理；后续可补充 deterministic 规则与测试集）
+  - **已决定（V1）：** `s` 仅校验非空字符串，不做房间词表匹配（见 FR-6）
+- "指代词"触发规则：是否需要更系统的中文规则/词典？（V1 由模型按 prompt 处理；后续可补充 deterministic 规则与测试集）
+- `a` 字段校验策略：精确匹配 vs 前缀匹配？
+  - **已决定（V1）：** 混合策略——固定动作精确匹配 + `设置`/`查询` 前缀匹配（见 FR-5）
+
+## 10. Implementation Notes
+
+### 文件结构
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `app/services/command_parser.py` | 新建 | 常量、校验函数、system prompt、`parse_commands()` |
+| `tests/unit/test_command_parser.py` | 新建 | 校验 + 解析的全部单元测试 |
+
+不修改现有文件。
+
+### 任务拆分
+- T1: 常量定义 + 校验函数（`_is_valid_action`, `_is_valid_nonempty_str`, `_is_valid_category`, `_is_valid_quantity`, `_is_valid_count`, `_validate_command`, `_validate_commands`）+ 工具函数（`compact_json_dumps`, `_fallback`）
+- T2: System Prompt（模块常量 `_SYSTEM_PROMPT`，使用 `{categories}` 占位符）+ JSON 提取（`_extract_json`）+ 核心函数 `parse_commands()`
+- T3: 单元测试（校验函数测试 + JSON 提取测试 + parse_commands 集成测试 mock LLM）
+
+### 扩展点
+- 未来 5 轮上下文：改用 `client.chat()` 传入 history messages。当前仅留注释标记，不写代码。
+
+### 验证方式
+```bash
+uv run python -m pytest tests/unit/test_command_parser.py -v
+```
 
